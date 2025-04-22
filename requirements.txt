@@ -1,5 +1,10 @@
-langchain>=0.2.0
-langchain-openai>=0.0.5  # LangChain OpenAI integration
-openai>=0.27.0          # OpenAI SDK (likely installed via langchain-openai)
-feedparser>=6.0.0       # RSS feed parsing
-streamlit>=1.20.0       # Web app framework
+streamlit           # for building the web app
+chromadb            # for ChromaDB integration
+langchain-openai    # for LangChain OpenAI integration
+langchain-core      # for LangChain
+langchain-chroma  # for LangChain ChromaDB integration    
+openai              # for OpenAI API
+sqlalchemy          # for database interaction
+python-dotenv       # for loading environment variables
+feedparser          # for parsing RSS feeds
+pandas              # for data manipulation

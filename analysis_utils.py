@@ -1,44 +1,68 @@
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings  # Import OpenAI integrations from new package
-from langchain import PromptTemplate, LLMChain
+import json
+import uuid
+from chromadb_utils import store_analysis_vector
+from langchain_openai import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from dotenv import load_dotenv
+from database import save_threat_metadata
+from datetime import datetime
 
-# Define a prompt for threat analysis
-analysis_prompt = PromptTemplate(
-    input_variables=["title", "content"],
-    template=(
-        "You are a cybersecurity threat analyst. Read the following news article and determine if it "
-        "describes any cybersecurity threats or incidents. If so, summarize the threat and its potential impact, "
-        "and assess its relevance.\n\n"
-        "Title: {title}\n"
-        "Content: {content}\n\n"
-        "Threat Analysis:"
-        "\n- Severity Level (Low, Medium, High, Critical):\n"
-        "- Confidence (Low, Medium, High):\n"
-        "- Recommended action in concise bullet points:\n"
-        "- Key Indicators of Compromise (IOCs):\n"
-        "- Affected systems or sectors:\n"
-        "- Mitigation strategies or recommendations:\n"
-        "- Potential threat actors or groups involved:\n"
-        "- Historical context or similar incidents:\n"
-        "- Summary of the threat and its potential impact:\n"
-        "- Relevance to current cybersecurity landscape:\n"
-        "- Additional notes or comments:\n"
-        "- CVE references or related vulnerabilities:\n"
-        "\nProvide your answer clearly formatted."
-        )
-)
+load_dotenv()
 
-# Initialize the OpenAI chat model (ChatGPT) with desired parameters
-llm = ChatOpenAI(model="gpt-4", temperature=0)  # model param replaces deprecated model_name&#8203;:contentReference[oaicite:3]{index=3}
+llm = ChatOpenAI(model="gpt-4o", temperature=0, max_retries=5, request_timeout=60)
 
-# Create a LangChain LLMChain for the analysis task
-analysis_chain = LLMChain(llm=llm, prompt=analysis_prompt)
+prompt_template = """
+You're a cybersecurity analyst. Analyse the article and respond strictly in JSON, matching this schema:
 
-def analyze_article(title: str, content: str) -> str:
-    """Run the threat analysis LLM chain on a single article."""
+{{
+  "severity_level": "Low | Medium | High | Critical",
+  "confidence": "Low | Medium | High",
+  "recommended_actions": ["Action1", "Action2"],
+  "key_IOCs": ["IOC1", "IOC2"],
+  "affected_systems_sectors": ["Sector1", "Sector2"],
+  "mitigation_strategies": ["Strategy1", "Strategy2"],
+  "potential_threat_actors": ["Actor1", "Actor2"],
+  "historical_context": "Brief historical context",
+  "summary_impact": "Brief summary of threat impact",
+  "relevance": "Relevance to cybersecurity landscape",
+  "additional_notes": "Additional insights or notes",
+  "cve_references": ["CVE-XXXX-XXXX"]
+}}
+
+Title: {title}
+Content: {content}
+
+IMPORTANT: Respond ONLY with the JSON object described above.
+"""
+
+prompt = ChatPromptTemplate.from_template(prompt_template)
+parser = JsonOutputParser()
+
+analysis_chain = prompt | llm | parser
+
+def analyse_and_store(title: str, content: str, source: str = "Unknown", url: str = "No URL Provided"):
     try:
-        result = analysis_chain.run(title=title, content=content)
-        # .run passes the inputs to the prompt; using keywords for multiple variables (no deprecation warnings).
-        return result.strip()
+        # Perform LLM-based analysis
+        analysis_result = analysis_chain.invoke({"title": title, "content": content})
+
+        # Generate a unique ID for ChromaDB storage
+        document_id = str(uuid.uuid4())
+
+        # Add source metadata explicitly to analysis result
+        analysis_result["source_name"] = source
+        analysis_result["source_url"] = url
+
+        # Store threat metadata in SQLite (passing analysis_result only, as it already includes source metadata)
+        save_threat_metadata(title, content, analysis_result)
+
+        # Store embeddings in ChromaDB (analysis_result already contains source metadata)
+        store_analysis_vector(document_id, analysis_result, source, url)
+
+        return analysis_result
+
     except Exception as err:
-        # Handle exceptions (e.g., API errors) gracefully
-        return f"Error during analysis: {err}"
+        error_msg = {"error": str(err)}
+        print("LLM Error:", error_msg)
+        return error_msg
+
