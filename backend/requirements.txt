@@ -8,3 +8,7 @@ sqlalchemy          # for database interaction
 python-dotenv       # for loading environment variables
 feedparser          # for parsing RSS feeds
 pandas              # for data manipulation
+fastapi
+uvicorn[standard]
+pydantic
+
